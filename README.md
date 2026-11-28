@@ -39,6 +39,7 @@ You should now see collections for each of your list URLs.
 - [Steven Lu Popular movies](https://github.com/sjlu/popular-movies)
 - [BFI](https://www.bfi.org.uk/articles/type/lists)
 - [Trakt lists and charts](docs/trakt.md) [privacy policy](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/wiki/Privacy-Policy)
+- [Jellyfin library queries](docs/jellyfin-queries.md)
 - [Radarr and Sonarr tags](docs/arr.md)
 
 See [supported list URLs](#supported-list-sources) for more details.
@@ -48,7 +49,6 @@ See [supported list URLs](#supported-list-sources) for more details.
 Follow these issues for the status of other sources from Jellyfin Auto Collections:
 
 - [Criterion Channel](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/18)
-- [Jellyfin library queries](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/21)
 - [ListMania](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/issues/12)
 
 # Developers

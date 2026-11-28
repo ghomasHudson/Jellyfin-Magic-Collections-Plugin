@@ -8,7 +8,7 @@ public interface ICollectionLibrary
 {
     IEnumerable<LibraryMedia> GetMedia();
     TaggedCollection? FindByTags(string urlTag, string markerTag, string? serviceTag = null);
-    Task<Guid> CreateAsync(string name, params string[] tags);
+    Task<Guid> CreateAsync(string name, string? overview, params string[] tags);
     Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);
     Task RemoveMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);

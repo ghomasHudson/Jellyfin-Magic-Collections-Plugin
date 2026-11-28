@@ -23,7 +23,8 @@ public sealed class SyncTask(CollectionSync sync, ILogger<SyncTask> logger) : IS
         await sync.RunAsync(config.SourceUrls,
             url => logger.LogWarning("Unsupported source list URL: {SourceUrl}", UrlForLog(url)),
             cancellationToken, config.VerboseLogging ? logger : null,
-            error => logger.LogWarning("Private Trakt list skipped: {Reason}", error), config).ConfigureAwait(false);
+            error => logger.LogWarning("Private Trakt list skipped: {Reason}", error), config,
+            error => logger.LogWarning("{JellyfinQueryError}", error)).ConfigureAwait(false);
         progress.Report(100);
     }
 

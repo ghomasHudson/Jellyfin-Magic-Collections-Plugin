@@ -41,7 +41,10 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             return new ArrHandler(services.GetRequiredService<SourceListHttpClient>(), () => getConfiguration().ArrServers);
         });
         serviceCollection.AddSingleton<ICollectionLibrary, JellyfinCollectionLibrary>();
-        serviceCollection.AddSingleton<CollectionSync>();
+        serviceCollection.AddSingleton<JellyfinQueryHandler>();
+        serviceCollection.AddSingleton(services => new CollectionSync(
+            services.GetServices<ISourceListHandler>(), services.GetRequiredService<ICollectionLibrary>(),
+            services.GetRequiredService<JellyfinQueryHandler>()));
     }
 
     private sealed class SourceListHttpClient() : HttpClient(new SocketsHttpHandler

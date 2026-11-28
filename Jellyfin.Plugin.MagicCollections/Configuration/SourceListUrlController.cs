@@ -13,6 +13,11 @@ public sealed class SourceListUrlController(IEnumerable<ISourceListHandler> hand
     [HttpPost]
     public bool Validate([FromBody] SourceListUrlRequest request)
     {
+        if (JellyfinQuery.ParseSource(request.Url) is { } local)
+        {
+            return local.Query is not null;
+        }
+
         if (request.ArrBaseUrls is not { } bases)
         {
             return SourceListHandlerLookup.Find(handlers, request.Url) is not null;

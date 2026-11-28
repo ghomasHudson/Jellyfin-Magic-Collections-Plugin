@@ -48,7 +48,7 @@ internal sealed class JellyfinCollectionLibrary(
         return collection is null ? null : new(collection.Id, collection.GetLinkedChildren().Select(item => item.Id).ToArray());
     }
 
-    public async Task<Guid> CreateAsync(string name, params string[] tags)
+    public async Task<Guid> CreateAsync(string name, string? overview, params string[] tags)
     {
         // Jellyfin derives the box set's folder and ID from the creation name.
         // Use a private storage name so a display namesake cannot collide with it.
@@ -56,9 +56,13 @@ internal sealed class JellyfinCollectionLibrary(
         {
             Name = $"MagicCollections-{Guid.NewGuid():N}"
         }).ConfigureAwait(false);
-        collection.Name = name;
         collection.Tags = [.. collection.Tags, .. tags.Except(collection.Tags, StringComparer.Ordinal)];
         collection.LockedFields = [.. collection.LockedFields, MetadataField.Name, MetadataField.Tags];
+        if (!string.IsNullOrWhiteSpace(overview))
+        {
+            SetManagedOverview(collection, overview);
+        }
+        collection.Name = name;
         await collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
         return collection.Id;
     }
@@ -87,8 +91,18 @@ internal sealed class JellyfinCollectionLibrary(
             return Task.CompletedTask;
         }
 
-        collection.Overview = overview;
+        SetManagedOverview(collection, overview);
         return collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);
+    }
+
+    private static void SetManagedOverview(BoxSet collection, string overview)
+    {
+        // Jellyfin refreshes box sets after creation and membership changes.
+        if (!collection.LockedFields.Contains(MetadataField.Overview))
+        {
+            collection.LockedFields = [.. collection.LockedFields, MetadataField.Overview];
+        }
+        collection.Overview = overview;
     }
 
     public async Task EnsurePosterAsync(Guid id, IReadOnlyList<Uri> faviconUrls, Uri? listImageUrl, CancellationToken cancellationToken)
