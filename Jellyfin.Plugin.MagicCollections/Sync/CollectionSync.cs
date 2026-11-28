@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.MagicCollections.Sync;
@@ -12,10 +13,19 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
     internal CollectionSync(IEnumerable<ISourceListHandler> handlers, ICollectionLibrary library, JellyfinQueryHandler jellyfin)
         : this(handlers, library) => _jellyfin = jellyfin;
 
-    public async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
+    public Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
         CancellationToken cancellationToken, ILogger? verboseLogger = null,
-        Action<string>? reportPrivateFailure = null, Action<string>? reportJellyfinFailure = null)
+        Action<string>? reportPrivateFailure = null, Action<string>? reportJellyfinFailure = null) =>
+        RunAsync(urls, reportUnsupported, cancellationToken, verboseLogger, reportPrivateFailure,
+            configuration: null, reportJellyfinFailure: reportJellyfinFailure);
+
+    internal async Task RunAsync(IEnumerable<string> urls, Action<string> reportUnsupported,
+        CancellationToken cancellationToken, ILogger? verboseLogger,
+        Action<string>? reportPrivateFailure, PluginConfiguration? configuration, Action<string>? reportJellyfinFailure = null)
     {
+        // Dashboard saves replace the settings object. Use the same *arr settings for selection,
+        // canonicalization and the read, even if a save lands during the run.
+        var runHandlers = handlers.Select(handler => handler is ArrHandler arr ? arr.Snapshot(configuration) : handler).ToArray();
         // Snapshot once per run. Build each index only if a source uses it.
         var media = new Lazy<LibraryMedia[]>(() => library.GetMedia().ToArray());
         var mediaByProvider = new Lazy<ILookup<MatchKey, Guid>>(() =>
@@ -25,7 +35,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             media.Value.Where(item => item.Identity.Type == SourceMediaType.Movie &&
                     item.MovieTitleYear is { IsComplete: true })
                 .ToLookup(item => item.MovieTitleYear!.Value.MatchKey(), item => item.Id));
-        var syncedSources = new HashSet<string>(StringComparer.Ordinal);
+        var syncedSources = new HashSet<(string Key, bool IsArr)>();
 
         foreach (var url in urls)
         {
@@ -39,7 +49,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
             cancellationToken.ThrowIfCancellationRequested();
             var libraryMatchCount = result.MatchedIds.Count;
-            var existing = library.FindByTags(result.SourceTag, ManagedCollectionTag);
+            // The same URL can point to another *arr service in a later run without reusing the old collection.
+            var existing = library.FindByTags(result.SourceTag, ManagedCollectionTag, result.ArrServiceTag);
             if (existing is null && result.PreviousTag is { } previousTag &&
                 library.FindByTags(previousTag, ManagedCollectionTag) is { } previous)
             {
@@ -58,7 +69,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
             }
 
             var id = existing?.Id ?? await library.CreateAsync(
-                result.Name, result.Description, ManagedCollectionTag, result.SourceTag, result.HandlerTag)
+                result.Name, result.Description, ManagedCollectionTag, result.SourceTag, result.ArrServiceTag ?? result.HandlerTag)
                 .ConfigureAwait(false);
             if (existing is not null && !string.IsNullOrWhiteSpace(result.Description))
             {
@@ -93,7 +104,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 return null;
             }
             var sourceTag = "jellyfin-query:" + Hash(query.CanonicalSource);
-            if (!BeginSource(sourceTag, sourceTag))
+            if (!BeginSource((sourceTag, false), sourceTag))
             {
                 return null;
             }
@@ -117,7 +128,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 
         async Task<MatchedSource?> ReadExternalAsync(string? url)
         {
-            if (SourceListHandlerLookup.Find(handlers, url) is not { } match)
+            if (SourceListHandlerLookup.Find(runHandlers, url) is not { } match)
             {
                 reportUnsupported(url!);
                 return null;
@@ -131,7 +142,8 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 ? PrivateTraktTag(canonicalUrl) : null;
             var logLabel = opaqueTag ?? (verboseLogger is null ? null :
                 canonicalSource.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
-            if (!BeginSource(canonicalUrl, logLabel))
+            // An *arr base resolves to the same service throughout this run.
+            if (!BeginSource((canonicalUrl, handler is ArrHandler), logLabel))
             {
                 return null;
             }
@@ -165,10 +177,11 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
                 ? list.ReadWithTraktAccount ? canonicalUrl : opaqueTag
                 : null;
             return new(sourceTag, handlerTag, logLabel, CollectionName(list, source), list.Description,
-                list.FaviconUrls, list.ImageUrl, list.ProviderItems.Count + list.MoviesByTitleYear.Count, matches, previousTag);
+                list.FaviconUrls, list.ImageUrl, list.ProviderItems.Count + list.MoviesByTitleYear.Count, matches,
+                previousTag, list.ArrServiceTag);
         }
 
-        bool BeginSource(string deduplicationKey, string? logLabel)
+        bool BeginSource((string Key, bool IsArr) deduplicationKey, string? logLabel)
         {
             if (!syncedSources.Add(deduplicationKey))
             {
@@ -199,7 +212,7 @@ public sealed class CollectionSync(IEnumerable<ISourceListHandler> handlers, ICo
 
     private sealed record MatchedSource(string SourceTag, string HandlerTag, string? LogLabel, string Name,
         string? Description, IReadOnlyList<Uri> FaviconUrls, Uri? ImageUrl, int MatchableEntryCount,
-        IReadOnlyCollection<Guid> MatchedIds, string? PreviousTag = null);
+        IReadOnlyCollection<Guid> MatchedIds, string? PreviousTag = null, string? ArrServiceTag = null);
 
     private readonly record struct MatchKey(SourceMediaType Type, string Provider, string ProviderId);
 

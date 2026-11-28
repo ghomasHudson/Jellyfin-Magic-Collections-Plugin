@@ -42,6 +42,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         // Jellyfin calls this for dashboard and direct API saves, before writing the XML.
         if (configuration is PluginConfiguration settings)
         {
+            ArrServerValidation.EnsureValid(settings);
             settings.SourceUrls = (settings.SourceUrls ?? []).Select(TraktHandler.CanonicalizeConfiguredUrl).ToArray();
         }
 

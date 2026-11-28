@@ -533,7 +533,7 @@ public sealed class JellyfinQuerySyncTests
         var manager = DispatchProxy.Create<ILibraryManager, LibraryIndex>();
         var index = (LibraryIndex)(object)manager;
         var collections = new ControlledLibrary();
-        var services = PluginTestServices.BuildProvider(services =>
+        var services = PluginTestServices.BuildProvider(configure: services =>
         {
             services.AddSingleton(manager);
             services.AddSingleton(DispatchProxy.Create<IFileSystem, FileSystemPaths>());

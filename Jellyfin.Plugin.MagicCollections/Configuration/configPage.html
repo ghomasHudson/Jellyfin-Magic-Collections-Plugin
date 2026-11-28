@@ -7,10 +7,12 @@
             #magicCollectionsUrls > .inputContainer:not(:last-child) {
                 margin-bottom: .6em;
             }
-            #magicCollectionsUrls .inputLabel {
+            #magicCollectionsUrls .inputLabel,
+            #magicCollectionsArrServers .inputLabel {
                 display: none;
             }
-            #magicCollectionsUrls input[aria-invalid="true"] {
+            #magicCollectionsUrls input[aria-invalid="true"],
+            #magicCollectionsArr input[aria-invalid="true"] {
                 border-color: #e53935;
             }
             #magicCollectionsPage .settingsSection {
@@ -22,6 +24,27 @@
             }
             #magicCollectionsAdvanced > .checkboxContainer {
                 padding-block: .6em;
+            }
+            #magicCollectionsArr .arrServerRow,
+            #magicCollectionsArr .arrServerColumns {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                align-items: end;
+                gap: .4em;
+            }
+            #magicCollectionsArr .arrServerRow {
+                margin-bottom: .6em;
+            }
+            #magicCollectionsArr .arrServerColumns {
+                margin-bottom: .25em;
+            }
+            #magicCollectionsArr .arrServerRow .inputContainer {
+                min-width: 0;
+                margin: 0;
+            }
+            #magicCollectionsArr .arrServerRow input {
+                box-sizing: border-box;
+                width: 100%;
             }
             #magicTraktConnect[hidden], #magicTraktDisconnect[hidden], #magicTraktHandoff[hidden] {
                 display: none;
@@ -35,6 +58,19 @@
                     <p class="fieldDescription">Add URLs for supported source lists or enter a local query such as <code>jellyfin/genres=Mystery</code>.</p>
                     <p class="fieldDescription">Sync removes titles from managed collections if they don't match the source list. It doesn't delete media from your library.</p>
                     <div id="magicCollectionsUrls" role="group" aria-labelledby="magicCollectionsUrlsHeading"></div>
+                    <p id="magicCollectionsUrlError" role="alert" hidden></p>
+                    <details id="magicCollectionsArr" class="settingsSection">
+                        <summary>Sonarr/Radarr</summary>
+                        <p class="fieldDescription">Enter Sonarr/Radarr server's base URL and API key. You can then use source list urls in the form <code>https://sonarr.example.com/tag_name</code>.</p>
+                        <div class="arrServerColumns" aria-hidden="true">
+                            <span>Base URL</span>
+                            <span>API key</span>
+                        </div>
+                        <div id="magicCollectionsArrServers" role="group" aria-label="*arr servers"></div>
+                        <button is="emby-button" type="button" class="raised" id="magicCollectionsArrTest">Test servers</button>
+                        <div id="magicCollectionsArrResults" role="status"></div>
+                        <p id="magicCollectionsArrError" role="alert"></p>
+                    </details>
                     <details class="settingsSection">
                         <summary>Trakt</summary>
                         <p class="fieldDescription">Public lists and charts don't require a Trakt account. Connect Trakt to import your private lists, watchlist, or personalized recommendations using Source list URLs above.</p>
@@ -84,6 +120,16 @@
                         <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://mdblist.com/lists/snoak/latest-movies-digital-release" />
                     </div>
                 </template>
+                <template id="magicCollectionsArrServerRow">
+                    <div class="arrServerRow">
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" autocomplete="off" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" />
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
         <script>
@@ -93,6 +139,15 @@
                 const form = page.querySelector('form');
                 const urls = page.querySelector('#magicCollectionsUrls');
                 const template = page.querySelector('#magicCollectionsUrlRow');
+                const arrPanel = page.querySelector('#magicCollectionsArr');
+                const arrTemplate = page.querySelector('#magicCollectionsArrServerRow');
+                const arrRows = arrPanel.querySelector('#magicCollectionsArrServers');
+                const testServers = arrPanel.querySelector('#magicCollectionsArrTest');
+                const arrResults = arrPanel.querySelector('#magicCollectionsArrResults');
+                const arrError = arrPanel.querySelector('[role="alert"]');
+                const urlError = page.querySelector('#magicCollectionsUrlError');
+                const save = form.querySelector('button[type="submit"]');
+                const urlChecks = new WeakMap();
                 const checkboxOptions = form.querySelectorAll('input[type="checkbox"]');
                 const traktClientId = form.elements.TraktClientId;
                 const traktStatus = page.querySelector('#magicTraktStatus');
@@ -103,6 +158,7 @@
                 const traktResponse = page.querySelector('#magicTraktResponse');
                 const finishTrakt = page.querySelector('#magicTraktFinish');
                 let traktBusy = false;
+                let arrRevision = 0;
 
                 function traktRequest(action, body) {
                     const request = {
@@ -207,11 +263,16 @@
                     let timer;
                     let inputRevision = 0;
                     async function checkUrl(url, requestRevision) {
+                        const bases = draftArrBases();
+                        if (isDecoratedArrSource(url, bases)) {
+                            input.setAttribute('aria-invalid', 'true');
+                            return;
+                        }
                         try {
                             const supported = await ApiClient.ajax({
                                 type: 'POST',
                                 url: ApiClient.getUrl('MagicCollections/SourceListUrl'),
-                                data: JSON.stringify({ Url: url }),
+                                data: JSON.stringify({ Url: url, ArrBaseUrls: bases }),
                                 contentType: 'application/json',
                                 dataType: 'json'
                             });
@@ -233,6 +294,7 @@
                     }
 
                     input.addEventListener('input', () => {
+                        clearUrlError();
                         if (row === urls.lastElementChild && input.value.trim()) {
                             addUrl();
                         }
@@ -244,8 +306,229 @@
                             urls.querySelectorAll('input').forEach((field, index) => field.setAttribute('aria-label', urlLabel(index)));
                         }
                     });
+                    urlChecks.set(input, () => scheduleUrlCheck(input.value));
                     urls.appendChild(row);
                 }
+
+                function recheckUrls() {
+                    urls.querySelectorAll('input').forEach(input => urlChecks.get(input)());
+                }
+
+                function labelArrRows() {
+                    Array.from(arrRows.children).forEach((row, index) => {
+                        const [base, key] = row.querySelectorAll('input');
+                        base.setAttribute('aria-label', 'Server ' + (index + 1) + ' base URL');
+                        key.setAttribute('aria-label', 'Server ' + (index + 1) + ' API key');
+                    });
+                }
+
+                function arrRowLabel(input) {
+                    const index = Array.from(arrRows.children).indexOf(input.closest('.arrServerRow'));
+                    return 'Server ' + (index + 1) + ': ';
+                }
+
+                function clearArrError() {
+                    const field = arrPanel.querySelector('input[aria-invalid="true"]');
+                    field?.removeAttribute('aria-invalid');
+                    field?.removeAttribute('aria-describedby');
+                    arrError.textContent = '';
+                }
+
+                function arrChanged() {
+                    arrRevision++;
+                    clearArrError();
+                    clearUrlError();
+                    arrResults.textContent = '';
+                }
+
+                function showArrError(message, field) {
+                    arrPanel.open = true;
+                    arrError.textContent = message;
+                    field?.setAttribute('aria-invalid', 'true');
+                    field?.setAttribute('aria-describedby', arrError.id);
+                    field?.focus();
+                }
+
+                function addArrRow(server = {}) {
+                    const row = arrTemplate.content.firstElementChild.cloneNode(true);
+                    const [base, key] = row.querySelectorAll('input');
+                    base.value = server.BaseUrl ?? '';
+                    key.value = server.ApiKey ?? '';
+                    const empty = () => !base.value.trim() && !key.value.trim();
+                    row.addEventListener('input', event => {
+                        if (row === arrRows.lastElementChild && !empty()) addArrRow();
+                        arrChanged();
+                        if (event.target === base) recheckUrls();
+                    });
+                    row.addEventListener('focusout', event => {
+                        if (row.contains(event.relatedTarget) || row === arrRows.lastElementChild || !empty()) return;
+                        row.remove();
+                        labelArrRows();
+                    });
+                    arrRows.appendChild(row);
+                    labelArrRows();
+                }
+
+                function renderArrServers(config) {
+                    arrChanged();
+                    arrRows.textContent = '';
+                    (config.ArrServers || []).forEach(server => addArrRow(server || {}));
+                    addArrRow();
+                }
+
+                function draftArrBases() {
+                    return Array.from(arrRows.querySelectorAll('input[type="text"]'), input => input.value.trim()).filter(canCheckArrBase);
+                }
+
+                function canCheckArrBase(value) {
+                    // Only a credential filter, not a URL parser. Server-side checks decide what is usable.
+                    return /^https?:\/\/[^/?#@\s\\]+(?:\/[^?#\s\\]*)?$/i.test(value);
+                }
+
+                function isDecoratedArrSource(value, bases) {
+                    const authority = /^https?:\/\/([^/\\?#]*)/i.exec(value)?.[1];
+                    if (authority === undefined || (!/[?#]/.test(value) && !authority.includes('@'))) return false;
+
+                    // This is a privacy filter, not a decision that a source is supported.
+                    function matchPath(url) {
+                        return url.pathname.replace(/%[0-9a-f]{2}/gi, escape => {
+                            const character = String.fromCharCode(parseInt(escape.slice(1), 16));
+                            return /[a-z0-9._~-]/i.test(character) ? character : escape.toUpperCase();
+                        }).replace(/\/+$/, '');
+                    }
+                    let source;
+                    try { source = new URL(value); } catch { return false; }
+                    const path = matchPath(source);
+                    return bases.some(value => {
+                        if (!value) return false;
+                        let base;
+                        try { base = new URL(value); } catch { return false; }
+                        const prefix = matchPath(base) + '/';
+                        const tag = path.slice(prefix.length);
+                        return source.origin === base.origin && path.startsWith(prefix) && tag.length > 0 && !tag.includes('/');
+                    });
+                }
+
+                function clearUrlError() {
+                    urls.querySelector('[aria-describedby="' + urlError.id + '"]')?.removeAttribute('aria-describedby');
+                    urlError.hidden = true;
+                    urlError.textContent = '';
+                }
+
+                function collectSourceUrls(bases) {
+                    const values = [];
+                    for (const input of urls.querySelectorAll('input')) {
+                        const value = input.value.trim();
+                        if (!value) continue;
+                        if (isDecoratedArrSource(value, bases)) {
+                            urlError.textContent = input.getAttribute('aria-label') + ': Remove credentials, query strings, and fragments from *arr tag URLs.';
+                            urlError.hidden = false;
+                            input.setAttribute('aria-invalid', 'true');
+                            input.setAttribute('aria-describedby', urlError.id);
+                            input.focus();
+                            return null;
+                        }
+                        values.push(value);
+                    }
+                    return values;
+                }
+
+                function collectArrServers() {
+                    const servers = [];
+                    const baseInputs = [];
+                    const bases = [];
+                    for (const row of arrRows.children) {
+                        const [base, key] = row.querySelectorAll('input');
+                        const BaseUrl = base.value.trim();
+                        const ApiKey = key.value.trim();
+                        if (!BaseUrl && !ApiKey) continue;
+                        if (!BaseUrl || !ApiKey) {
+                            showArrError(arrRowLabel(base) + 'Enter both a base URL and an API key, or clear both fields.', BaseUrl ? key : base);
+                            return null;
+                        }
+                        if (!/^[!-~]+$/.test(ApiKey)) {
+                            showArrError(arrRowLabel(base) + 'Enter an API key with no spaces or non-ASCII characters.', key);
+                            return null;
+                        }
+                        servers.push({ BaseUrl, ApiKey });
+                        baseInputs.push(base);
+                        // Preserve indexing without sending base URLs that may contain credentials.
+                        bases.push(canCheckArrBase(BaseUrl) ? BaseUrl : null);
+                    }
+                    return { servers, baseInputs, bases };
+                }
+
+                async function checkArrBases(draft, revision) {
+                    if (!draft.bases.length) return true;
+                    let result;
+                    try {
+                        result = await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('MagicCollections/ArrServerBases'),
+                            data: JSON.stringify({ ArrBaseUrls: draft.bases }),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        });
+                    } catch {
+                        if (revision === arrRevision) showArrError('Could not check the *arr server settings. Try again.');
+                        return false;
+                    }
+                    if (revision !== arrRevision) return false;
+                    if (result.Error) {
+                        const { Index, Message } = result.Error;
+                        const base = draft.baseInputs[Index];
+                        showArrError(arrRowLabel(base) + Message, base);
+                        return false;
+                    }
+                    return true;
+                }
+
+                function renderArrTestResults(results, baseInputs) {
+                    const list = document.createElement('ul');
+                    for (const { Index, Service, Message } of results) {
+                        const item = document.createElement('li');
+                        item.textContent = arrRowLabel(baseInputs[Index]) + (Service ? Service + ' — ' : '') + Message;
+                        list.appendChild(item);
+                    }
+                    arrResults.replaceChildren(list);
+                }
+
+                testServers.addEventListener('mousedown', event => event.preventDefault());
+                testServers.addEventListener('click', async () => {
+                    if (testServers.disabled) return;
+                    clearArrError();
+                    arrResults.textContent = '';
+                    const draft = collectArrServers();
+                    if (!draft) return;
+                    if (!draft.servers.length) {
+                        arrResults.textContent = 'Enter a server base URL and API key to test.';
+                        return;
+                    }
+
+                    const revision = arrRevision;
+                    testServers.disabled = true;
+                    arrResults.textContent = 'Testing servers…';
+                    try {
+                        // Check URL syntax and duplicates before sending any draft API keys to the test endpoint.
+                        if (!await checkArrBases(draft, revision)) {
+                            if (revision === arrRevision) arrResults.textContent = '';
+                            return;
+                        }
+                        if (revision !== arrRevision) return;
+                        const result = await ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('MagicCollections/ArrServerTest'),
+                            data: JSON.stringify({ ArrServers: draft.servers }),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        });
+                        if (revision === arrRevision) renderArrTestResults(result.Results, draft.baseInputs);
+                    } catch {
+                        if (revision === arrRevision) arrResults.textContent = 'Could not test the servers. Try again.';
+                    } finally {
+                        testServers.disabled = false;
+                    }
+                });
 
                 function renderUrls(values) {
                     urls.textContent = '';
@@ -265,6 +548,7 @@
 
                 function renderConfiguration(config) {
                     renderUrls(config.SourceUrls || []);
+                    renderArrServers(config);
                     checkboxOptions.forEach(option => { option.checked = config[option.name] ?? option.defaultChecked; });
                     traktClientId.value = config.TraktClientId ?? '';
                 }
@@ -279,18 +563,34 @@
                 });
                 page.addEventListener('pagehide', closeTraktHandoff);
                 // Keep a blank row from collapsing on blur before the Save click completes.
-                form.querySelector('button[type="submit"]').addEventListener('mousedown', event => event.preventDefault());
-                form.addEventListener('submit', event => {
+                save.addEventListener('mousedown', event => event.preventDefault());
+                form.addEventListener('submit', async event => {
                     event.preventDefault();
-                    return withConfiguration(async config => {
-                        config.SourceUrls = Array.from(urls.querySelectorAll('input'), input => input.value.trim()).filter(Boolean);
-                        checkboxOptions.forEach(option => { config[option.name] = option.checked; });
-                        config.TraktClientId = traktClientId.value.trim();
-                        const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                        renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
-                        refreshTraktStatus();
-                        Dashboard.processPluginConfigurationUpdateResult(result);
-                    });
+                    if (save.disabled) return;
+                    clearArrError();
+                    clearUrlError();
+                    const draft = collectArrServers();
+                    if (!draft || !collectSourceUrls(draft.bases)) return;
+                    const revision = arrRevision;
+                    save.disabled = true;
+                    try {
+                        if (!await checkArrBases(draft, revision)) return;
+                        await withConfiguration(async config => {
+                            if (revision !== arrRevision) return;
+                            const sourceUrls = collectSourceUrls(draft.bases);
+                            if (!sourceUrls) return;
+                            config.SourceUrls = sourceUrls;
+                            config.ArrServers = draft.servers;
+                            checkboxOptions.forEach(option => { config[option.name] = option.checked; });
+                            config.TraktClientId = traktClientId.value.trim();
+                            const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                            renderConfiguration(await ApiClient.getPluginConfiguration(pluginId));
+                            refreshTraktStatus();
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    } finally {
+                        save.disabled = false;
+                    }
                 });
             })();
         </script>

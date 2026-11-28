@@ -7,7 +7,7 @@ public sealed record TaggedCollection(Guid Id, IReadOnlyCollection<Guid> MemberI
 public interface ICollectionLibrary
 {
     IEnumerable<LibraryMedia> GetMedia();
-    TaggedCollection? FindByTags(string urlTag, string markerTag);
+    TaggedCollection? FindByTags(string urlTag, string markerTag, string? serviceTag = null);
     Task<Guid> CreateAsync(string name, string? overview, params string[] tags);
     Task ReplaceTagAsync(Guid id, string oldTag, string newTag, CancellationToken cancellationToken);
     Task AddMembersAsync(Guid id, IReadOnlyCollection<Guid> memberIds);

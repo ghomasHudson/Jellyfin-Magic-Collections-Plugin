@@ -16,8 +16,9 @@ internal sealed class ControlledLibrary : ICollectionLibrary
     public List<ManagedCollection> ManagedCollections { get; } = [];
 
     public IEnumerable<LibraryMedia> GetMedia() => Media;
-    public TaggedCollection? FindByTags(string urlTag, string markerTag) =>
-        ManagedCollections.SingleOrDefault(c => c.Tags.Contains(urlTag) && c.Tags.Contains(markerTag)) is { } c
+    public TaggedCollection? FindByTags(string urlTag, string markerTag, string? serviceTag = null) =>
+        ManagedCollections.SingleOrDefault(c => c.Tags.Contains(urlTag) && c.Tags.Contains(markerTag) &&
+            (serviceTag is null || c.Tags.Contains(serviceTag))) is { } c
             ? new(c.Id, c.Members.ToArray()) : null;
 
     public Task<Guid> CreateAsync(string name, params string[] tags) =>

@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.MagicCollections;
+using Jellyfin.Plugin.MagicCollections.Configuration;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -6,12 +7,15 @@ namespace MagicCollections.Tests;
 
 internal static class PluginTestServices
 {
-    public static ServiceProvider BuildProvider(Action<IServiceCollection>? configure = null)
+    public static ServiceProvider BuildProvider(PluginConfiguration? configuration = null, Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         var dataPath = Path.Combine(Path.GetTempPath(), $"magic-collections-tests-{Guid.NewGuid():N}");
         services.AddSingleton<IApplicationPaths>(new TestApplicationPaths(dataPath));
         new ServiceRegistrator().RegisterServices(services, null!);
+        // Do not query Plugin.Instance while another test is saving its own plugin settings.
+        var testConfiguration = configuration ?? new();
+        services.AddSingleton<Func<PluginConfiguration>>(() => testConfiguration);
         configure?.Invoke(services);
         return services.BuildServiceProvider();
     }

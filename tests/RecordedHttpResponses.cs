@@ -3,7 +3,7 @@ using Xunit;
 
 namespace MagicCollections.Tests;
 
-internal sealed class RecordedHttpResponses : HttpMessageHandler
+internal sealed class RecordedHttpResponses(Action<HttpRequestMessage>? observeRequest = null) : HttpMessageHandler
 {
     private readonly Dictionary<string, Func<Task<HttpResponseMessage>>> _responses = [];
     public List<string> Requests { get; } = [];
@@ -22,6 +22,7 @@ internal sealed class RecordedHttpResponses : HttpMessageHandler
         Assert.Equal(HttpMethod.Get, request.Method);
         var endpoint = request.RequestUri!.AbsoluteUri;
         Requests.Add(endpoint);
+        observeRequest?.Invoke(request);
         return _responses.TryGetValue(endpoint, out var respond)
             ? respond().WaitAsync(cancellationToken)
             : throw new InvalidOperationException($"No recording for {endpoint}");

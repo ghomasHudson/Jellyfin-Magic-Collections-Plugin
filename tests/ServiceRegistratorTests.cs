@@ -7,6 +7,23 @@ namespace MagicCollections.Tests;
 public sealed class ServiceRegistratorTests
 {
     [Fact]
+    public void Registers_one_handler_for_all_configured_arr_bases()
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers =
+            [
+                new() { BaseUrl = "https://first.example.com", ApiKey = "first-key" },
+                new() { BaseUrl = "https://second.example.com", ApiKey = "second-key" }
+            ]
+        });
+        var handlers = provider.GetServices<ISourceListHandler>();
+
+        var first = Assert.Single(handlers, h => h.Supports(new("https://first.example.com/watched")));
+        Assert.Same(first, Assert.Single(handlers, h => h.Supports(new("https://second.example.com/watched"))));
+    }
+
+    [Fact]
     public void Registers_a_Popular_Movies_handler_without_replacing_the_MDBList_handler()
     {
         var popularFeed = new Uri("https://popular-movies-data.stevenlu.com/movies.json");

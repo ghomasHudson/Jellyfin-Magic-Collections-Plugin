@@ -34,7 +34,7 @@ internal sealed class JellyfinCollectionLibrary(
         });
     }
 
-    public TaggedCollection? FindByTags(string urlTag, string markerTag)
+    public TaggedCollection? FindByTags(string urlTag, string markerTag, string? serviceTag = null)
     {
         var candidates = library.GetItemList(new InternalItemsQuery
         {
@@ -43,7 +43,8 @@ internal sealed class JellyfinCollectionLibrary(
             Tags = [urlTag]
         });
         var collection = candidates.OfType<BoxSet>().SingleOrDefault(c =>
-            c.Tags.Contains(urlTag, StringComparer.Ordinal) && c.Tags.Contains(markerTag, StringComparer.Ordinal));
+            c.Tags.Contains(urlTag, StringComparer.Ordinal) && c.Tags.Contains(markerTag, StringComparer.Ordinal) &&
+            (serviceTag is null || c.Tags.Contains(serviceTag, StringComparer.Ordinal)));
         return collection is null ? null : new(collection.Id, collection.GetLinkedChildren().Select(item => item.Id).ToArray());
     }
 

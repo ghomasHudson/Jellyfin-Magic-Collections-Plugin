@@ -85,4 +85,119 @@ public sealed class SourceListUrlControllerTests
 
         Assert.Equal(supported, controller.Validate(new(url)));
     }
+
+    [Theory]
+    [InlineData("https://media.example.com/Radarr/tag_name", true)]
+    [InlineData("https://MEDIA.EXAMPLE.COM:443/Radarr/family%20night", true)]
+    [InlineData("https://media.example.com/radarr/tag_name", false)]
+    [InlineData("http://media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com:9443/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com.evil.invalid/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name/", false)]
+    [InlineData("https://media.example.com/Radarr/extra/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/extra/../tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/extra/%2e%2e/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr//tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/%20", false)]
+    [InlineData("https://media.example.com/Radarr/%0d", false)]
+    [InlineData("https://user:key@media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://@media.example.com/Radarr/tag_name", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name?apikey=key", false)]
+    [InlineData("https://media.example.com/Radarr/tag_name#", false)]
+    public void Arr_source_must_identify_one_tag_at_a_configured_scheme_host_port_and_base_path(string url, bool supported)
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers =
+            [
+                new() { BaseUrl = "https://media.example.com/Radarr/", ApiKey = "example-key" },
+                new() { BaseUrl = "https://media.example.com/Sonarr/", ApiKey = "other-key" }
+            ]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.Equal(supported, controller.Validate(new(url)));
+    }
+
+    [Fact]
+    public void Arr_source_rejects_duplicate_normalized_bases()
+    {
+        var first = new ArrServerConfiguration { BaseUrl = "https://media.example.com/Radarr", ApiKey = "first-key" };
+        var duplicate = new ArrServerConfiguration { BaseUrl = "https://MEDIA.example.com:443/Radarr/", ApiKey = "second-key" };
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers = [first, duplicate]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.False(controller.Validate(new("https://media.example.com/Radarr/tag_name")));
+    }
+
+    [Theory]
+    [InlineData("https://admin:password@media.example.com/Radarr", "example-key")]
+    [InlineData("https://media.example.com/Radarr?apikey=example-key", "example-key")]
+    [InlineData("https://media.example.com/Radarr#example-key", "example-key")]
+    [InlineData("https://media.example.com/Radarr", "")]
+    [InlineData("https://media.example.com/Radarr", "invalid\r\nkey")]
+    public void A_base_or_key_that_cannot_be_used_safely_does_not_enable_a_saved_source(string baseUrl, string key)
+    {
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers = [new() { BaseUrl = baseUrl, ApiKey = key }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.False(controller.Validate(new("https://media.example.com/Radarr/tag_name")));
+    }
+
+    [Fact]
+    public void Draft_URL_checks_only_need_bases_and_do_not_fall_back_to_removed_saved_pairs()
+    {
+        const string old = "https://old.example.invalid";
+        const string draft = "https://new.example.invalid/proxy";
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers = [new() { BaseUrl = old, ApiKey = "saved-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(old + "/tag_name")));
+        Assert.False(controller.Validate(new(old + "/tag_name", [])));
+        Assert.False(controller.Validate(new(old + "/tag_name", [draft])));
+        Assert.True(controller.Validate(new(draft + "/tag_name", [draft])));
+        Assert.False(controller.Validate(new(draft + "/extra/tag_name", [draft])));
+        Assert.False(controller.Validate(new(draft + "/tag_name", [draft, draft + "/"])));
+        Assert.True(controller.Validate(new("https://letterboxd.com/example/list/movies/", [draft])));
+        Assert.True(controller.Validate(new("jellyfin/genres=Mystery&years=2025", [draft])));
+        Assert.False(controller.Validate(new("jellyfin/sortBy=Random", [draft])));
+    }
+
+    [Fact]
+    public void A_scoped_IPv6_address_does_not_match_an_arr_server()
+    {
+        const string unscoped = "http://[fe80::1]:7878/radarr";
+        const string scoped = "http://[fe80::1%25eth0]:7878/radarr";
+        using var provider = PluginTestServices.BuildProvider(new()
+        {
+            ArrServers = [new() { BaseUrl = unscoped, ApiKey = "saved-key" }]
+        });
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(unscoped + "/family")));
+        Assert.False(controller.Validate(new(scoped + "/family")));
+        Assert.False(controller.Validate(new(unscoped + "/family", [scoped])));
+    }
+
+    [Fact]
+    public void Draft_validation_rejects_decorated_sources_even_without_saved_credentials()
+    {
+        const string draft = "https://media.example.com/proxy";
+        using var provider = PluginTestServices.BuildProvider();
+        var controller = ActivatorUtilities.CreateInstance<SourceListUrlController>(provider);
+
+        Assert.True(controller.Validate(new(draft + "/family-shows", [draft])));
+        Assert.False(controller.Validate(new(draft + "/family-shows?apikey=key", [draft])));
+        Assert.False(controller.Validate(new(draft + "/family-shows#key", [draft])));
+    }
 }
