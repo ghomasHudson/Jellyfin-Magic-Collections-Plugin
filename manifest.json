@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/main/logo.png",
     "versions": [
       {
+        "version": "0.8.0.0",
+        "targetAbi": "10.11.5.0",
+        "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.8.0.0/magic-collections-0.8.0.0.zip",
+        "checksum": "2523e2282fb633b9126c59e3b3a2a759",
+        "timestamp": "2026-11-28T16:56:53Z",
+        "changelog": "## v0.8.0.0 (2026-11-28)\n\n### Feat\n\n- **arr**: detect and test server connections automatically\n- sync collections from Sonarr tags\n- sync collections from Radarr tags\n- **sync**: describe Jellyfin query collections\n- **sync**: wire extended Jellyfin query filters\n- **sync**: build collections from local Jellyfin queries\n- **sync**: add typed Jellyfin item predicates\n\n### Fix\n\n- validate Arr settings and preserve tag collection identity\n- **sync**: harden Jellyfin library query handling\n- **sync**: preserve nonblank collection overviews\n\n[Release notes on GitHub](https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/tag/v0.8.0.0)"
+      },
+      {
         "version": "0.7.0.0",
         "targetAbi": "10.11.5.0",
         "sourceUrl": "https://github.com/ghomasHudson/Jellyfin-Magic-Collections-Plugin/releases/download/v0.7.0.0/magic-collections-0.7.0.0.zip",
