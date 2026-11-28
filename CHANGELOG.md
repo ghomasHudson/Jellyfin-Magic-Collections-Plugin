@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.8.0.0 (2026-11-28)
+
+### Feat
+
+- **arr**: detect and test server connections automatically
+- sync collections from Sonarr tags
+- sync collections from Radarr tags
+- **sync**: describe Jellyfin query collections
+- **sync**: wire extended Jellyfin query filters
+- **sync**: build collections from local Jellyfin queries
+- **sync**: add typed Jellyfin item predicates
+
+### Fix
+
+- validate Arr settings and preserve tag collection identity
+- **sync**: harden Jellyfin library query handling
+- **sync**: preserve nonblank collection overviews
+
 ## v0.7.0.0 (2026-11-28)
 
 ### Feat
